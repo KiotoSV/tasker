@@ -1,4 +1,5 @@
-﻿# Создаёт ярлык "Планнер.lnk" на рабочем столе с иконкой icon.ico.
+﻿# Устанавливает Python (через winget, если нужно) и tkinterdnd2,
+# затем создаёт ярлык "Планнер.lnk" на рабочем столе.
 # Обычно запускается через install.bat (двойной клик).
 
 $ErrorActionPreference = "Stop"
@@ -12,19 +13,78 @@ if (-not (Test-Path $tasker)) {
     exit 1
 }
 
-$pythonw = $null
-$pwCmd = Get-Command pythonw.exe -ErrorAction SilentlyContinue
-if ($pwCmd) { $pythonw = $pwCmd.Source }
-if (-not $pythonw) {
-    $pCmd = Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($pCmd) { $pythonw = $pCmd.Source }
+function Find-Python {
+    $cmd = Get-Command python.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $candidates = @(
+        "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe"
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) { return $c }
+    }
+    return $null
 }
-if (-not $pythonw) {
-    Write-Host "ОШИБКА: не найден Python." -ForegroundColor Red
-    Write-Host "Скачайте его с https://www.python.org/downloads/ и при установке"
-    Write-Host "поставьте галочку 'Add Python to PATH'."
-    exit 1
+
+function Find-Pythonw {
+    param($pythonExe)
+    $cmd = Get-Command pythonw.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    if ($pythonExe) {
+        $pyw = Join-Path (Split-Path $pythonExe -Parent) "pythonw.exe"
+        if (Test-Path $pyw) { return $pyw }
+    }
+    return $pythonExe
 }
+
+$python = Find-Python
+if (-not $python) {
+    Write-Host "Python не найден." -ForegroundColor Yellow
+    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Host "Устанавливаю Python через winget (подтвердите UAC)..." -ForegroundColor Cyan
+        & winget install --id Python.Python.3.12 -e --silent --accept-package-agreements --accept-source-agreements
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Установка Python через winget не удалась (код $LASTEXITCODE)." -ForegroundColor Red
+            exit 1
+        }
+        $python = Find-Python
+        if (-not $python) {
+            Write-Host ""
+            Write-Host "Python установлен, но ещё не виден в этом окне." -ForegroundColor Yellow
+            Write-Host "Закройте это окно и снова запустите install.bat." -ForegroundColor Yellow
+            exit 0
+        }
+    } else {
+        Write-Host "winget недоступен. Установите Python вручную:" -ForegroundColor Red
+        Write-Host "  https://www.python.org/downloads/"
+        Write-Host "  При установке поставьте галочку 'Add Python to PATH'."
+        exit 1
+    }
+}
+
+Write-Host "Python: $python" -ForegroundColor DarkGray
+
+$prevPref = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+& $python -m pip show tkinterdnd2 > $null 2>&1
+$hasDnd = ($LASTEXITCODE -eq 0)
+$ErrorActionPreference = $prevPref
+
+if (-not $hasDnd) {
+    Write-Host "Устанавливаю tkinterdnd2 (для drag-and-drop файлов)..." -ForegroundColor Cyan
+    & $python -m pip install --user --upgrade tkinterdnd2
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Не удалось установить tkinterdnd2. Drag-and-drop работать не будет," -ForegroundColor Yellow
+        Write-Host "но кнопка 'Прикрепить файл' будет доступна." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "tkinterdnd2: уже установлен" -ForegroundColor DarkGray
+}
+
+$pythonw = Find-Pythonw $python
 
 $desktop = [Environment]::GetFolderPath("Desktop")
 $shortcutPath = Join-Path $desktop "Планнер.lnk"
