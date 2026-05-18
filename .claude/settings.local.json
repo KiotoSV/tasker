@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile tasker.py)",
+      "Bash(python -c ' *)",
+      "Bash(where pythonw *)",
+      "Bash(where python *)",
+      "Bash(python make_icon.py)",
+      "Bash(timeout 3 python tasker.py)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(timeout 4 python tasker.py)",
+      "Bash(echo \"---exit: $?\")",
+      "Bash(echo \"exit=$?\")"
+    ]
+  }
+}
