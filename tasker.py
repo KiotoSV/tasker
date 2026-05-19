@@ -47,6 +47,7 @@ def _apply_dark_titlebar(window: tk.Tk) -> None:
         pass
 
 TASKS_DIR = Path(__file__).parent / "tasks"
+PROJECTS_ROOT = Path(r"C:\dev")
 DATE_FMT = "%Y-%m-%d %H:%M"
 FORBIDDEN_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
@@ -86,12 +87,13 @@ def unique_path(base_name: str, exclude: Path | None = None) -> Path:
 
 
 def parse_task(path: Path) -> dict:
-    status, created, completed, project = "pending", now_str(), "", ""
+    status, created, completed = "pending", now_str(), ""
+    projects: list[str] = []
     body_lines: list[str] = []
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
-        return {"status": status, "project": project, "created": created,
+        return {"status": status, "projects": projects, "created": created,
                 "completed": completed, "body": ""}
 
     lines = text.splitlines()
@@ -112,29 +114,44 @@ def parse_task(path: Path) -> dict:
             elif key == "completed":
                 completed = value
             elif key == "project":
-                project = value
+                if value and value not in projects:
+                    projects.append(value)
         i += 1
     body_lines = lines[i:]
     return {
         "status": status,
-        "project": project,
+        "projects": projects,
         "created": created,
         "completed": completed,
         "body": "\n".join(body_lines),
     }
 
 
-def write_task(path: Path, status: str, project: str, created: str,
+def write_task(path: Path, status: str, projects: list[str], created: str,
                completed: str, body: str) -> None:
+    project_lines = "".join(f"project: {p}\n" for p in projects)
     content = (
         f"status: {status}\n"
-        f"project: {project}\n"
+        f"{project_lines}"
         f"created: {created}\n"
         f"completed: {completed}\n"
         f"\n"
         f"{body}"
     )
     path.write_text(content, encoding="utf-8")
+
+
+def launch_claude_in_powershell(project_path: Path) -> None:
+    """Открывает новое окно PowerShell, делает cd в папку и запускает claude."""
+    escaped = str(project_path).replace("'", "''")
+    command = f"Set-Location -LiteralPath '{escaped}'; claude"
+    if sys.platform == "win32":
+        subprocess.Popen(
+            ["powershell.exe", "-NoExit", "-Command", command],
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
+    else:
+        subprocess.Popen(["pwsh", "-NoExit", "-Command", command])
 
 
 def attachments_dir(task_path: Path) -> Path:
@@ -245,6 +262,7 @@ class App(_BaseTk):
         self.done_var = tk.BooleanVar(value=False)
         self.current_path: Path | None = None
         self.current_meta: dict | None = None
+        self._current_projects: list[str] = []
         self.list_rows: list[dict] = []
         self.selected_path: str | None = None
         self.filter_radios: dict[str, ttk.Radiobutton] = {}
@@ -267,6 +285,7 @@ class App(_BaseTk):
         self._paned.bind("<Configure>", self._on_paned_configure)
         self.bind_all("<Control-s>", self._on_ctrl_s)
         self.bind_all("<Control-S>", self._on_ctrl_s)
+        self.bind_all("<Control-KeyPress>", self._on_control_keypress)
 
     def _apply_theme(self) -> None:
         self.configure(bg=BG)
@@ -446,7 +465,7 @@ class App(_BaseTk):
         toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         ttk.Button(
             toolbar, text="＋  Новая задача", style="Primary.TButton",
-            command=self.new_task,
+            command=self.new_task, cursor="hand2",
         ).pack(side="left")
 
         self.search_container = tk.Frame(
@@ -467,6 +486,7 @@ class App(_BaseTk):
             text="Поиск по названию",
             bg=SURFACE, fg=MUTED,
             font=(FONT_FAMILY, 10),
+            cursor="hand2",
         )
         self.search_placeholder.place(in_=self.search_entry, relx=0, rely=0.5, x=2, anchor="w")
         self.search_placeholder.bind(
@@ -494,6 +514,7 @@ class App(_BaseTk):
                 self.filter_container, text=label, value=value,
                 style="Filter.TRadiobutton",
                 variable=self.filter_var, command=self.refresh_list,
+                cursor="hand2",
             )
             self.filter_radios[value] = radio
         self._filter_vertical = False
@@ -574,14 +595,37 @@ class App(_BaseTk):
         self.title_entry.grid(row=0, column=0, sticky="ew", padx=(0, 12))
         self.status_check = ttk.Checkbutton(
             title_row, text="Выполнена", variable=self.done_var,
+            cursor="hand2",
         )
         self.status_check.grid(row=0, column=1, sticky="e")
 
-        ttk.Label(inner, text="ПРОЕКТ", style="Section.TLabel").grid(
-            row=2, column=0, sticky="w"
+        project_header = ttk.Frame(inner, style="Surface.TFrame")
+        project_header.grid(row=2, column=0, sticky="ew", pady=(0, 4))
+        project_header.columnconfigure(0, weight=1)
+        ttk.Label(
+            project_header, text="ПРОЕКТЫ", style="Section.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        self.project_add_button = ttk.Button(
+            project_header, text="＋  Добавить проект",
+            style="Subtle.TButton", command=self._add_project,
+            cursor="hand2",
         )
-        self.project_entry = ttk.Entry(inner)
-        self.project_entry.grid(row=3, column=0, sticky="ew", pady=(4, 10))
+        self.project_add_button.grid(row=0, column=1, sticky="e")
+
+        self.project_card = tk.Frame(
+            inner, bg=SURFACE, highlightthickness=1,
+            highlightbackground=BORDER, highlightcolor=BORDER,
+        )
+        self.project_card.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+        self.projects_frame = tk.Frame(self.project_card, bg=SURFACE)
+        self.projects_frame.pack(fill="x", padx=10, pady=8)
+        self._projects_empty_label = tk.Label(
+            self.projects_frame,
+            text="Нет проектов",
+            bg=SURFACE, fg=MUTED, font=(FONT_FAMILY, 9),
+            anchor="w",
+        )
+        self._project_rows: list[tk.Frame] = []
 
         self.dates_label = ttk.Label(
             inner, text="", style="Muted.TLabel", anchor="w",
@@ -619,6 +663,7 @@ class App(_BaseTk):
         self.attach_button = ttk.Button(
             attach_header, text="＋  Прикрепить",
             style="Subtle.TButton", command=self._attach_via_dialog,
+            cursor="hand2",
         )
         self.attach_button.grid(row=0, column=1, sticky="e")
 
@@ -643,9 +688,11 @@ class App(_BaseTk):
         actions.columnconfigure(0, weight=1)
         ttk.Button(
             actions, text="Удалить", style="Danger.TButton", command=self.delete_task,
+            cursor="hand2",
         ).grid(row=0, column=0, sticky="w")
         ttk.Button(
             actions, text="Сохранить", style="Primary.TButton", command=self.save_task,
+            cursor="hand2",
         ).grid(row=0, column=1, sticky="e")
 
         paned.add(right_wrap, weight=1)
@@ -658,6 +705,7 @@ class App(_BaseTk):
         self._set_editor_enabled(False)
         self._update_meta_label(None)
         self._refresh_attachments()
+        self._refresh_projects()
 
     def _resolve_target_width(self) -> int:
         width = self._paned.winfo_width()
@@ -752,6 +800,43 @@ class App(_BaseTk):
             self.save_task()
         return "break"
 
+    def _on_control_keypress(self, event: tk.Event) -> str | None:
+        """Ловит Ctrl+C/V/X/A/S на нелатинских раскладках.
+
+        Tk матчит <Control-c> по keysym; на русской раскладке у физической
+        клавиши C keysym нелатинский — стандартные биндинги не срабатывают.
+        Здесь матчим по keycode (физическая клавиша). На латинской раскладке
+        keysym совпадает с ожидаемой буквой — отдаём событие штатному
+        обработчику класса виджета.
+        """
+        actions = {
+            67: ("c", lambda w: w.event_generate("<<Copy>>")),
+            86: ("v", lambda w: w.event_generate("<<Paste>>")),
+            88: ("x", lambda w: w.event_generate("<<Cut>>")),
+            65: ("a", self._select_all_in),
+            83: ("s", lambda w: self._on_ctrl_s(event)),
+        }
+        info = actions.get(event.keycode)
+        if info is None:
+            return None
+        expected, fn = info
+        if event.keysym.lower() == expected:
+            return None
+        fn(event.widget)
+        return "break"
+
+    @staticmethod
+    def _select_all_in(widget: tk.Widget) -> None:
+        try:
+            if isinstance(widget, tk.Text):
+                widget.tag_add("sel", "1.0", "end-1c")
+                widget.mark_set("insert", "end-1c")
+            elif isinstance(widget, (tk.Entry, ttk.Entry)):
+                widget.select_range(0, "end")
+                widget.icursor("end")
+        except tk.TclError:
+            pass
+
     def _show_toast(self, message: str, kind: str = "success") -> None:
         if self._toast_timer is not None:
             try:
@@ -802,10 +887,10 @@ class App(_BaseTk):
     def _set_editor_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
         self.title_entry.configure(state=state)
-        self.project_entry.configure(state=state)
         self.body_text.configure(state=state)
         self.status_check.configure(state="normal" if enabled else "disabled")
         self.attach_button.configure(state=state)
+        self.project_add_button.configure(state=state)
 
     def _refresh_attachments(self) -> None:
         for row in self._attachment_rows:
@@ -937,6 +1022,104 @@ class App(_BaseTk):
         self._refresh_attachments()
         self._show_toast(f"Удалено: {att_path.name}")
 
+    def _refresh_projects(self) -> None:
+        for row in self._project_rows:
+            row.destroy()
+        self._project_rows.clear()
+        self._projects_empty_label.pack_forget()
+
+        if not self._current_projects:
+            self._projects_empty_label.pack(fill="x", pady=2)
+            return
+
+        for project_path in self._current_projects:
+            row = self._build_project_row(project_path)
+            row.pack(fill="x", pady=2)
+            self._project_rows.append(row)
+
+    def _build_project_row(self, project_path: str) -> tk.Frame:
+        path = Path(project_path)
+        display = path.name or project_path
+
+        row = tk.Frame(self.projects_frame, bg=SURFACE)
+        row.columnconfigure(1, weight=1)
+
+        icon = tk.Label(
+            row, text="📁", bg=SURFACE, fg=MUTED,
+            font=(FONT_FAMILY, 11),
+        )
+        icon.grid(row=0, column=0, sticky="w", padx=(0, 6))
+
+        name = tk.Label(
+            row, text=display, bg=SURFACE, fg=ACCENT,
+            font=(FONT_FAMILY, 10), cursor="hand2", anchor="w",
+        )
+        name.grid(row=0, column=1, sticky="ew")
+        name.bind("<Button-1>", lambda e, p=path: self._open_project_folder(p))
+        name.bind("<Enter>", lambda e, lbl=name: lbl.configure(fg=ACCENT_HOVER))
+        name.bind("<Leave>", lambda e, lbl=name: lbl.configure(fg=ACCENT))
+
+        claude_btn = ttk.Button(
+            row, text="claude", style="Subtle.TButton",
+            command=lambda p=path: self._launch_claude(p),
+            cursor="hand2",
+        )
+        claude_btn.grid(row=0, column=2, padx=(8, 4))
+
+        remove = tk.Label(
+            row, text="×", bg=SURFACE, fg=MUTED,
+            font=(FONT_FAMILY, 14), cursor="hand2", padx=6,
+        )
+        remove.grid(row=0, column=3, sticky="e")
+        remove.bind("<Button-1>", lambda e, p=project_path: self._remove_project(p))
+        remove.bind("<Enter>", lambda e, lbl=remove: lbl.configure(fg=DANGER))
+        remove.bind("<Leave>", lambda e, lbl=remove: lbl.configure(fg=MUTED))
+
+        return row
+
+    def _add_project(self) -> None:
+        if self.current_path is None:
+            return
+        initial = str(PROJECTS_ROOT) if PROJECTS_ROOT.is_dir() else None
+        folder = filedialog.askdirectory(
+            parent=self, title="Выберите папку проекта",
+            initialdir=initial, mustexist=True,
+        )
+        if not folder:
+            return
+        path_str = str(Path(folder))
+        if path_str in self._current_projects:
+            self._show_toast("Проект уже добавлен", kind="warn")
+            return
+        self._current_projects.append(path_str)
+        self._refresh_projects()
+
+    def _remove_project(self, project_path: str) -> None:
+        if project_path not in self._current_projects:
+            return
+        self._current_projects.remove(project_path)
+        self._refresh_projects()
+
+    def _open_project_folder(self, path: Path) -> None:
+        if not path.is_dir():
+            self._show_toast("Папка не найдена", kind="warn")
+            return
+        try:
+            open_in_system(path)
+        except OSError as exc:
+            messagebox.showerror("Не удалось открыть", str(exc))
+
+    def _launch_claude(self, path: Path) -> None:
+        if not path.is_dir():
+            self._show_toast("Папка не найдена", kind="warn")
+            return
+        try:
+            launch_claude_in_powershell(path)
+        except OSError as exc:
+            messagebox.showerror("Не удалось запустить claude", str(exc))
+            return
+        self._show_toast(f"claude · {path.name}")
+
     def _update_meta_label(self, meta: dict | None) -> None:
         if meta is None:
             self.dates_label.configure(text="Выберите задачу или создайте новую")
@@ -1012,19 +1195,19 @@ class App(_BaseTk):
                 break
 
     def _make_row(self) -> dict:
-        row = tk.Frame(self.list_inner, bg=SURFACE)
+        row = tk.Frame(self.list_inner, bg=SURFACE, cursor="hand2")
         row.columnconfigure(1, weight=1)
 
-        accent_bar = tk.Frame(row, bg=SURFACE, width=3)
+        accent_bar = tk.Frame(row, bg=SURFACE, width=3, cursor="hand2")
         accent_bar.grid(row=0, column=0, sticky="ns")
 
-        body = tk.Frame(row, bg=SURFACE)
+        body = tk.Frame(row, bg=SURFACE, cursor="hand2")
         body.grid(row=0, column=1, sticky="ew")
         body.columnconfigure(1, weight=1)
 
         icon = tk.Label(
             body, bg=SURFACE, font=(FONT_FAMILY, 13),
-            width=2, anchor="center",
+            width=2, anchor="center", cursor="hand2",
         )
         icon.grid(row=0, column=0, sticky="n", padx=(10, 8), pady=(10, 10))
 
@@ -1033,6 +1216,7 @@ class App(_BaseTk):
             font=(FONT_FAMILY, 10),
             wraplength=self._row_wraplength,
             justify="left", anchor="w",
+            cursor="hand2",
         )
         title.grid(row=0, column=1, sticky="ew", padx=(0, 14), pady=(10, 10))
 
@@ -1148,16 +1332,16 @@ class App(_BaseTk):
         meta = parse_task(path)
         self.current_path = path
         self.current_meta = meta
+        self._current_projects = list(meta.get("projects", []))
         self._set_editor_enabled(True)
         self.title_entry.delete(0, "end")
         self.title_entry.insert(0, path.stem)
-        self.project_entry.delete(0, "end")
-        self.project_entry.insert(0, meta.get("project", ""))
         self.body_text.delete("1.0", "end")
         self.body_text.insert("1.0", meta["body"])
         self.done_var.set(meta["status"] == "done")
         self._update_meta_label(meta)
         self._refresh_attachments()
+        self._refresh_projects()
 
     def _scroll_to_row(self, row_widget: tk.Frame) -> None:
         self.list_canvas.update_idletasks()
@@ -1183,21 +1367,21 @@ class App(_BaseTk):
     def _clear_editor(self) -> None:
         self.current_path = None
         self.current_meta = None
+        self._current_projects = []
         self.title_entry.configure(state="normal")
         self.title_entry.delete(0, "end")
-        self.project_entry.configure(state="normal")
-        self.project_entry.delete(0, "end")
         self.body_text.configure(state="normal")
         self.body_text.delete("1.0", "end")
         self.done_var.set(False)
         self._update_meta_label(None)
         self._set_editor_enabled(False)
         self._refresh_attachments()
+        self._refresh_projects()
 
     def new_task(self) -> None:
         TASKS_DIR.mkdir(exist_ok=True)
         path = unique_path("Новая задача")
-        write_task(path, "pending", "", now_str(), "", "")
+        write_task(path, "pending", [], now_str(), "", "")
         if self.filter_var.get() == "done":
             self.filter_var.set("pending")
         self.refresh_list()
@@ -1225,9 +1409,9 @@ class App(_BaseTk):
         elif new_status == "pending":
             completed = ""
 
-        project = self.project_entry.get().strip()
+        projects = list(self._current_projects)
         body = self.body_text.get("1.0", "end-1c")
-        write_task(self.current_path, new_status, project, created, completed, body)
+        write_task(self.current_path, new_status, projects, created, completed, body)
         if target != self.current_path:
             old_attach = attachments_dir(self.current_path)
             new_attach = attachments_dir(target)
@@ -1252,7 +1436,7 @@ class App(_BaseTk):
 
         self.current_meta = {
             "status": new_status,
-            "project": project,
+            "projects": projects,
             "created": created,
             "completed": completed,
             "body": body,
