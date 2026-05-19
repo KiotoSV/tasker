@@ -1,15 +1,15 @@
-﻿# Устанавливает Python (через winget, если нужно) и tkinterdnd2,
-# затем создаёт ярлык "Планнер.lnk" на рабочем столе.
+﻿# Устанавливает Python (через winget, если нужно), пакет «tasker» и
+# tkinterdnd2; создаёт ярлык «Планнер.lnk» на рабочем столе.
 # Обычно запускается через install.bat (двойной клик).
 
 $ErrorActionPreference = "Stop"
 
 $projectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$tasker = Join-Path $projectDir "tasker.py"
-$icon   = Join-Path $projectDir "icon.ico"
+$pyproject  = Join-Path $projectDir "pyproject.toml"
+$icon       = Join-Path $projectDir "icon.ico"
 
-if (-not (Test-Path $tasker)) {
-    Write-Host "ОШИБКА: не найден $tasker" -ForegroundColor Red
+if (-not (Test-Path $pyproject)) {
+    Write-Host "ОШИБКА: не найден $pyproject" -ForegroundColor Red
     exit 1
 }
 
@@ -67,21 +67,17 @@ if (-not $python) {
 
 Write-Host "Python: $python" -ForegroundColor DarkGray
 
-$prevPref = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-& $python -m pip show tkinterdnd2 > $null 2>&1
-$hasDnd = ($LASTEXITCODE -eq 0)
-$ErrorActionPreference = $prevPref
-
-if (-not $hasDnd) {
-    Write-Host "Устанавливаю tkinterdnd2 (для drag-and-drop файлов)..." -ForegroundColor Cyan
-    & $python -m pip install --user --upgrade tkinterdnd2
+Write-Host "Устанавливаю пакет «tasker» (editable) с поддержкой DnD..." -ForegroundColor Cyan
+& $python -m pip install --user --upgrade --editable "$projectDir[dnd]"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Не удалось установить пакет (код $LASTEXITCODE)." -ForegroundColor Red
+    Write-Host "Попробую установить без DnD..." -ForegroundColor Yellow
+    & $python -m pip install --user --upgrade --editable $projectDir
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Не удалось установить tkinterdnd2. Drag-and-drop работать не будет," -ForegroundColor Yellow
-        Write-Host "но кнопка 'Прикрепить файл' будет доступна." -ForegroundColor Yellow
+        Write-Host "Установка не удалась полностью." -ForegroundColor Red
+        exit 1
     }
-} else {
-    Write-Host "tkinterdnd2: уже установлен" -ForegroundColor DarkGray
+    Write-Host "Установлено без tkinterdnd2 — drag-and-drop будет недоступен." -ForegroundColor Yellow
 }
 
 $pythonw = Find-Pythonw $python
@@ -92,7 +88,7 @@ $shortcutPath = Join-Path $desktop "Планнер.lnk"
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath       = $pythonw
-$shortcut.Arguments        = '"' + $tasker + '"'
+$shortcut.Arguments        = "-m tasker"
 $shortcut.WorkingDirectory = $projectDir
 if (Test-Path $icon) { $shortcut.IconLocation = $icon }
 $shortcut.Description = "Простой планнер задач"
@@ -101,5 +97,6 @@ $shortcut.Save()
 Write-Host ""
 Write-Host "Готово!" -ForegroundColor Green
 Write-Host "Ярлык создан на рабочем столе: $shortcutPath"
-Write-Host "Запускается:                   $pythonw `"$tasker`""
+Write-Host "Запускается:                   $pythonw -m tasker"
+Write-Host "Рабочая папка:                 $projectDir"
 Write-Host ""

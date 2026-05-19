@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tasker"
+version = "0.1.0"
+description = "Простой десктопный планнер задач (Tkinter, plain-text storage)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dnd = ["tkinterdnd2"]
+dev = ["pytest"]
+
+[project.scripts]
+tasker-cli = "tasker.app:main"
+
+[project.gui-scripts]
+tasker = "tasker.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

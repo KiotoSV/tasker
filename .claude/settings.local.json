@@ -10,7 +10,10 @@
       "Bash(echo \"exit: $?\")",
       "Bash(timeout 4 python tasker.py)",
       "Bash(echo \"---exit: $?\")",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(python *)",
+      "Bash(rm -rf __pycache__ src/tasker/__pycache__ src/tasker/ui/__pycache__)",
+      "Bash(PYTHONPATH=src python -c ' *)"
     ]
   }
 }
