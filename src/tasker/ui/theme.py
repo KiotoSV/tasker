@@ -131,7 +131,7 @@ FONT_SUBHEADING = (FONT_FAMILY, 13)    # 18px subheading
 FONT_HEADING_SM = (FONT_FAMILY, 16)    # 24px small heading
 FONT_HEADING = (FONT_FAMILY, 20)       # 29px section heading
 FONT_HEADING_LG = (FONT_FAMILY, 26)    # 41px in-content title (editor title)
-FONT_DISPLAY = (FONT_FAMILY, 32, "bold")  # 51px wordmark — the loudest type on screen
+FONT_DISPLAY = (FONT_FAMILY, 26, "bold")  # 51px wordmark — the loudest type on screen
 
 
 def apply_theme(root: tk.Misc, name: str | None = None) -> None:
@@ -185,8 +185,8 @@ def apply_theme(root: tk.Misc, name: str | None = None) -> None:
         lightcolor=BG,
         darkcolor=BG,
         insertcolor=ACCENT,
-        padding=(0, 6),
-        font=FONT_HEADING_LG,
+        padding=(0, 0),
+        font=FONT_HEADING,
         relief="flat",
     )
     style.map(
@@ -293,6 +293,51 @@ def apply_theme(root: tk.Misc, name: str | None = None) -> None:
         foreground=[("disabled", MUTED)],
     )
 
+    # Компактные варианты — для нижней панели действий в редакторе. Цвет
+    # и поведение state-карт наследуем от родительских стилей, переписываем
+    # только padding/font, чтобы кнопки не доминировали в композиции.
+    style.configure(
+        "Action.Primary.TButton",
+        background=CORK,
+        foreground=TEXT,
+        bordercolor=CORK,
+        lightcolor=CORK,
+        darkcolor=CORK,
+        focusthickness=0,
+        padding=(12, 5),
+        font=FONT_BODY,
+        relief="flat",
+    )
+    style.map(
+        "Action.Primary.TButton",
+        background=[("active", CORK), ("pressed", CORK), ("disabled", CORK)],
+        bordercolor=[("active", BORDER_STRONG), ("pressed", ACCENT)],
+        lightcolor=[("active", BORDER_STRONG), ("pressed", ACCENT)],
+        darkcolor=[("active", BORDER_STRONG), ("pressed", ACCENT)],
+        foreground=[("disabled", MUTED)],
+    )
+
+    style.configure(
+        "Action.Danger.TButton",
+        background=BG,
+        foreground=TEXT,
+        bordercolor=BORDER,
+        lightcolor=BORDER,
+        darkcolor=BORDER,
+        focusthickness=0,
+        padding=(10, 4),
+        font=FONT_BODY,
+        relief="flat",
+    )
+    style.map(
+        "Action.Danger.TButton",
+        background=[("active", BG), ("pressed", BG)],
+        bordercolor=[("active", ACCENT), ("pressed", ACCENT)],
+        lightcolor=[("active", ACCENT)],
+        darkcolor=[("active", ACCENT)],
+        foreground=[("disabled", MUTED)],
+    )
+
     style.layout(
         "Filter.TRadiobutton",
         [
@@ -370,4 +415,34 @@ def apply_theme(root: tk.Misc, name: str | None = None) -> None:
     style.map(
         "Vertical.TScrollbar",
         background=[("active", HIGHLIGHT)],
+    )
+
+    # Минималистичный autohide-скроллбар: без кнопок-стрелок, тонкий
+    # ползунок, все цвета совпадают с BG (невидим). Виджет, использующий
+    # стиль, сам перекрашивает его при прокрутке/наведении через
+    # ttk.Style.configure(...) и возвращает обратно по таймеру.
+    style.layout(
+        "Autohide.Vertical.TScrollbar",
+        [(
+            "Vertical.Scrollbar.trough",
+            {
+                "sticky": "ns",
+                "children": [(
+                    "Vertical.Scrollbar.thumb",
+                    {"expand": "1", "sticky": "nswe"},
+                )],
+            },
+        )],
+    )
+    style.configure(
+        "Autohide.Vertical.TScrollbar",
+        background=BG,
+        troughcolor=BG,
+        bordercolor=BG,
+        lightcolor=BG,
+        darkcolor=BG,
+        arrowsize=0,
+        gripcount=0,
+        width=6,
+        relief="flat",
     )

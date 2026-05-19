@@ -33,8 +33,8 @@ class App(BaseTk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Планнер")
-        self.geometry("1280x820")
-        self.minsize(760, 480)
+        self.geometry("1280x730")
+        self.minsize(760, 730)
         if ICON_PATH.exists():
             try:
                 self.iconbitmap(default=str(ICON_PATH))
@@ -74,7 +74,7 @@ class App(BaseTk):
         self._paned = paned
 
         left = ttk.Frame(paned, padding=(32, 28, 22, 28))
-        left.rowconfigure(6, weight=1)
+        left.rowconfigure(6, weight=1, minsize=220)
         left.columnconfigure(0, weight=1)
 
         wordmark = ttk.Label(left, text="ПЛАННЕР", style="Display.TLabel")
@@ -122,7 +122,7 @@ class App(BaseTk):
 
         paned.add(left, weight=0)
 
-        right_wrap = ttk.Frame(paned, padding=(20, 28, 32, 28))
+        right_wrap = ttk.Frame(paned, padding=(20, 18, 32, 18))
         right_wrap.rowconfigure(0, weight=1)
         right_wrap.columnconfigure(0, weight=1)
 

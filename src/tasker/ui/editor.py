@@ -25,7 +25,7 @@ from tasker.platform_utils import (
 from tasker.ui.dnd import AVAILABLE as DND_AVAILABLE
 from tasker.ui.dnd import DND_FILES
 from tasker.ui import theme
-from tasker.ui.theme import FONT_BODY, FONT_CAPTION, FONT_HEADING_LG
+from tasker.ui.theme import FONT_BODY, FONT_CAPTION, FONT_HEADING
 from tasker.ui.widgets import DashedDivider, ToastManager
 
 
@@ -138,8 +138,16 @@ class EditorPanel(tk.Frame):
         self._status_var = tk.StringVar(value=_STATUS_LABELS["pending"])
         self._project_rows: list[tk.Frame] = []
         self._attachment_rows: list[tk.Frame] = []
+        # Autohide-скроллбар: невидим по умолчанию, показывается при
+        # прокрутке/наведении и прячется после _SCROLL_HIDE_DELAY мс простоя.
+        self._scroll_hide_after: str | None = None
+        self._scroll_hover = False
+        self._scroll_visible = False
 
         self._build_ui()
+        # Изначально стиль уже невидимый из theme.py; синхронизируем флаг,
+        # чтобы _show_scroll() сработал при первой прокрутке.
+        self._scroll_visible = False
         self._set_enabled(False)
         self._update_meta_label(None)
         self._refresh_attachments()
@@ -217,6 +225,24 @@ class EditorPanel(tk.Frame):
             highlightbackground=theme.BORDER,
             highlightcolor=theme.BORDER,
         )
+        self._canvas.configure(bg=theme.BG)
+        # Стиль Autohide.Vertical.TScrollbar держит BG в большинстве слотов;
+        # после set_theme() значения BG/MUTED меняются — переусанавливаем,
+        # сохраняя текущий visible/hidden режим.
+        if self._scroll_visible:
+            ttk.Style().configure(
+                "Autohide.Vertical.TScrollbar",
+                background=theme.MUTED,
+                lightcolor=theme.MUTED, darkcolor=theme.MUTED,
+                troughcolor=theme.BG, bordercolor=theme.BG,
+            )
+        else:
+            ttk.Style().configure(
+                "Autohide.Vertical.TScrollbar",
+                background=theme.BG,
+                lightcolor=theme.BG, darkcolor=theme.BG,
+                troughcolor=theme.BG, bordercolor=theme.BG,
+            )
         for card in (self._project_card, self._attach_card, self._body_card):
             card.configure(
                 bg=theme.BG,
@@ -253,21 +279,48 @@ class EditorPanel(tk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        inner = ttk.Frame(self, style="Surface.TFrame", padding=32)
-        inner.grid(row=0, column=0, sticky="nsew")
+        # Канвас + autohide-скроллбар. Скроллбар занят grid'ом постоянно
+        # (чтобы не дёргать раскладку), а его «видимость» — это переключение
+        # цветов стиля между BG и MUTED.
+        self._canvas = tk.Canvas(
+            self, bg=theme.BG, highlightthickness=0, borderwidth=0,
+        )
+        self._canvas.grid(row=0, column=0, sticky="nsew")
+        self._scroll = ttk.Scrollbar(
+            self, orient="vertical",
+            style="Autohide.Vertical.TScrollbar",
+            command=self._on_scroll_drag,
+        )
+        self._scroll.grid(row=0, column=1, sticky="ns")
+        self._canvas.configure(yscrollcommand=self._on_yscroll)
+
+        inner = ttk.Frame(self._canvas, style="Surface.TFrame", padding=(32, 22))
+        self._inner = inner
+        self._inner_window = self._canvas.create_window(
+            (0, 0), window=inner, anchor="nw",
+        )
         inner.columnconfigure(0, weight=1)
-        inner.rowconfigure(9, weight=1)
+        inner.rowconfigure(9, weight=1, minsize=160)
+
+        inner.bind(
+            "<Configure>",
+            lambda _e: self._canvas.configure(scrollregion=self._canvas.bbox("all")),
+        )
+        self._canvas.bind("<Configure>", self._on_canvas_configure)
+        self._scroll.bind("<Enter>", lambda _e: self._on_scroll_hover(True))
+        self._scroll.bind("<Leave>", lambda _e: self._on_scroll_hover(False))
+        self.after_idle(self._attach_mousewheel)
 
         ttk.Label(
             inner, text=_small_caps("НАЗВАНИЕ"), style="Section.TLabel",
-        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
+        ).grid(row=0, column=0, sticky="w", pady=(0, 0))
         self._title_entry = ttk.Entry(
-            inner, style="Headline.TEntry", font=FONT_HEADING_LG,
+            inner, style="Headline.TEntry", font=FONT_HEADING,
         )
         self._title_entry.grid(row=1, column=0, sticky="ew")
 
         self._title_underline = tk.Frame(inner, bg=theme.BORDER_STRONG, height=1)
-        self._title_underline.grid(row=2, column=0, sticky="ew", pady=(8, 18))
+        self._title_underline.grid(row=2, column=0, sticky="ew", pady=(6, 12))
         self._title_entry.bind(
             "<FocusIn>",
             lambda _e: self._title_underline.configure(bg=theme.ACCENT),
@@ -278,10 +331,10 @@ class EditorPanel(tk.Frame):
         )
 
         self._status_selector = _StatusSelector(inner, self._status_var)
-        self._status_selector.grid(row=3, column=0, sticky="w", pady=(0, 16))
+        self._status_selector.grid(row=3, column=0, sticky="w", pady=(0, 10))
 
         project_header = ttk.Frame(inner, style="Surface.TFrame")
-        project_header.grid(row=4, column=0, sticky="ew", pady=(0, 6))
+        project_header.grid(row=4, column=0, sticky="ew", pady=(0, 2))
         project_header.columnconfigure(0, weight=1)
         ttk.Label(
             project_header, text=_small_caps("ПРОЕКТЫ"), style="Section.TLabel",
@@ -310,23 +363,23 @@ class EditorPanel(tk.Frame):
         self._dates_label = ttk.Label(
             inner, text="", style="Muted.TLabel", anchor="w",
         )
-        self._dates_label.grid(row=6, column=0, sticky="ew", pady=(0, 12))
+        self._dates_label.grid(row=6, column=0, sticky="ew", pady=(0, 8))
 
         self._divider_top = DashedDivider(inner)
-        self._divider_top.grid(row=7, column=0, sticky="ew", pady=(0, 18))
+        self._divider_top.grid(row=7, column=0, sticky="ew", pady=(0, 12))
 
         ttk.Label(
             inner, text=_small_caps("ОПИСАНИЕ"), style="Section.TLabel",
-        ).grid(row=8, column=0, sticky="w", pady=(0, 6))
+        ).grid(row=8, column=0, sticky="w", pady=(0, 2))
         self._body_card = tk.Frame(
             inner, bg=theme.BG, highlightthickness=1,
             highlightbackground=theme.BORDER, highlightcolor=theme.BORDER,
         )
-        self._body_card.grid(row=9, column=0, sticky="nsew", pady=(0, 18))
+        self._body_card.grid(row=9, column=0, sticky="nsew", pady=(0, 12))
         self._body_card.rowconfigure(0, weight=1)
         self._body_card.columnconfigure(0, weight=1)
         self._body_text = tk.Text(
-            self._body_card, wrap="word", undo=True, height=22,
+            self._body_card, wrap="word", undo=True, height=1,
             bg=theme.BG, fg=theme.TEXT, insertbackground=theme.ACCENT,
             relief="flat", borderwidth=0, highlightthickness=0,
             padx=10, pady=10, font=FONT_BODY,
@@ -338,7 +391,7 @@ class EditorPanel(tk.Frame):
         self._body_text.configure(yscrollcommand=body_scroll.set)
 
         attach_header = ttk.Frame(inner, style="Surface.TFrame")
-        attach_header.grid(row=10, column=0, sticky="ew", pady=(0, 6))
+        attach_header.grid(row=10, column=0, sticky="ew", pady=(0, 2))
         attach_header.columnconfigure(0, weight=1)
         ttk.Label(
             attach_header, text=_small_caps("ВЛОЖЕНИЯ"), style="Section.TLabel",
@@ -354,7 +407,7 @@ class EditorPanel(tk.Frame):
             inner, bg=theme.BG, highlightthickness=1,
             highlightbackground=theme.BORDER, highlightcolor=theme.BORDER,
         )
-        self._attach_card.grid(row=11, column=0, sticky="ew", pady=(0, 18))
+        self._attach_card.grid(row=11, column=0, sticky="ew", pady=(0, 12))
         self._attachments_frame = tk.Frame(self._attach_card, bg=theme.BG)
         self._attachments_frame.pack(fill="x", padx=12, pady=10)
         self._attach_empty_label = tk.Label(
@@ -366,19 +419,129 @@ class EditorPanel(tk.Frame):
         )
 
         self._divider_bottom = DashedDivider(inner)
-        self._divider_bottom.grid(row=12, column=0, sticky="ew", pady=(0, 18))
+        self._divider_bottom.grid(row=12, column=0, sticky="ew", pady=(0, 12))
 
         actions = ttk.Frame(inner, style="Surface.TFrame")
         actions.grid(row=13, column=0, sticky="ew")
         actions.columnconfigure(0, weight=1)
         ttk.Button(
-            actions, text="Удалить", style="Danger.TButton", command=self._on_delete,
+            actions, text="Удалить", style="Action.Danger.TButton", command=self._on_delete,
             cursor="hand2",
         ).grid(row=0, column=0, sticky="w")
         ttk.Button(
-            actions, text="Сохранить", style="Primary.TButton", command=self._on_save,
+            actions, text="Сохранить", style="Action.Primary.TButton", command=self._on_save,
             cursor="hand2",
         ).grid(row=0, column=1, sticky="e")
+
+    _SCROLL_HIDE_DELAY = 400  # мс простоя до скрытия autohide-скроллбара
+
+    def _on_canvas_configure(self, event: tk.Event) -> None:
+        # Тянем ширину inner под канвас, чтобы колонки растягивались как ожидается.
+        self._canvas.itemconfigure(self._inner_window, width=event.width)
+        # Если содержимое помещается по высоте — фиксируем inner = высоте
+        # канваса. Тогда weight=1 на строке 9 (Описание) съест остаток
+        # вертикали ровно так же, как до обёртки в Canvas: описание не
+        # «раздувается» до натуральной высоты body_text.
+        # Если контент длиннее канваса — оставляем естественный размер, и
+        # тогда срабатывает прокрутка.
+        inner_req_h = self._inner.winfo_reqheight()
+        target_h = max(event.height, inner_req_h)
+        self._canvas.itemconfigure(self._inner_window, height=target_h)
+
+    def _on_yscroll(self, lo: str, hi: str) -> None:
+        self._scroll.set(lo, hi)
+        # Если контент полностью помещается — скроллить нечего, прячем.
+        try:
+            f, l = float(lo), float(hi)
+        except ValueError:
+            f, l = 0.0, 1.0
+        if f <= 0.0 and l >= 1.0:
+            self._hide_scroll()
+            return
+        self._show_scroll()
+        self._schedule_hide()
+
+    def _on_scroll_drag(self, *args) -> None:
+        self._canvas.yview(*args)
+        self._show_scroll()
+        self._schedule_hide()
+
+    def _on_scroll_hover(self, entering: bool) -> None:
+        self._scroll_hover = entering
+        if entering:
+            if self._scroll_hide_after is not None:
+                self.after_cancel(self._scroll_hide_after)
+                self._scroll_hide_after = None
+            self._show_scroll()
+        else:
+            self._schedule_hide()
+
+    def _show_scroll(self) -> None:
+        if self._scroll_visible:
+            return
+        self._scroll_visible = True
+        ttk.Style().configure(
+            "Autohide.Vertical.TScrollbar",
+            background=theme.MUTED,
+            lightcolor=theme.MUTED,
+            darkcolor=theme.MUTED,
+        )
+
+    def _hide_scroll(self) -> None:
+        if not self._scroll_visible:
+            return
+        self._scroll_visible = False
+        ttk.Style().configure(
+            "Autohide.Vertical.TScrollbar",
+            background=theme.BG,
+            lightcolor=theme.BG,
+            darkcolor=theme.BG,
+        )
+
+    def _schedule_hide(self) -> None:
+        if self._scroll_hover:
+            return
+        if self._scroll_hide_after is not None:
+            self.after_cancel(self._scroll_hide_after)
+        self._scroll_hide_after = self.after(
+            self._SCROLL_HIDE_DELAY, self._hide_scroll_tick,
+        )
+
+    def _hide_scroll_tick(self) -> None:
+        self._scroll_hide_after = None
+        if self._scroll_hover:
+            return
+        self._hide_scroll()
+
+    def _attach_mousewheel(self) -> None:
+        """Колесо мыши приходит виджету под курсором, поэтому слушаем на
+        toplevel и сами решаем, скроллить ли наш канвас. Если курсор внутри
+        редактора, но не над body_text (у Text свой class-binding), крутим
+        канвас и подсвечиваем скроллбар на время прокрутки."""
+        try:
+            top = self.winfo_toplevel()
+        except tk.TclError:
+            return
+        top.bind("<MouseWheel>", self._on_mousewheel, add="+")
+
+    def _on_mousewheel(self, event: tk.Event) -> None:
+        try:
+            target = self.winfo_containing(event.x_root, event.y_root)
+        except tk.TclError:
+            return
+        in_editor = False
+        in_body = False
+        cur = target
+        while cur is not None:
+            if cur is self._body_text:
+                in_body = True
+            if cur is self:
+                in_editor = True
+                break
+            cur = getattr(cur, "master", None)
+        if not in_editor or in_body:
+            return
+        self._canvas.yview_scroll(int(-event.delta / 120), "units")
 
     def _set_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
