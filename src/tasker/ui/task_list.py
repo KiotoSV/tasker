@@ -5,16 +5,8 @@ import tkinter as tk
 from collections.abc import Callable
 from tkinter import ttk
 
-from tasker.ui.theme import (
-    ACCENT,
-    ACCENT_SOFT,
-    BORDER,
-    FONT_FAMILY,
-    MUTED,
-    SURFACE,
-    SURFACE_ALT,
-    TEXT,
-)
+from tasker.ui import theme
+from tasker.ui.theme import FONT_BODY, FONT_CAPTION
 
 
 class TaskListView(tk.Frame):
@@ -28,8 +20,8 @@ class TaskListView(tk.Frame):
         on_select: Callable[[str], None],
     ) -> None:
         super().__init__(
-            master, bg=SURFACE, highlightthickness=1,
-            highlightbackground=BORDER, highlightcolor=BORDER,
+            master, bg=theme.BG, highlightthickness=1,
+            highlightbackground=theme.BORDER, highlightcolor=theme.BORDER,
         )
         self._on_select = on_select
         self._rows: list[dict] = []
@@ -42,13 +34,13 @@ class TaskListView(tk.Frame):
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
-        self._canvas = tk.Canvas(self, bg=SURFACE, highlightthickness=0, bd=0)
+        self._canvas = tk.Canvas(self, bg=theme.BG, highlightthickness=0, bd=0)
         self._canvas.grid(row=0, column=0, sticky="nsew", padx=(2, 0), pady=2)
         scroll = ttk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
         scroll.grid(row=0, column=1, sticky="ns", padx=(0, 2), pady=2)
         self._canvas.configure(yscrollcommand=scroll.set)
 
-        self._inner = tk.Frame(self._canvas, bg=SURFACE)
+        self._inner = tk.Frame(self._canvas, bg=theme.BG)
         self._window = self._canvas.create_window(
             (0, 0), window=self._inner, anchor="nw",
         )
@@ -68,7 +60,7 @@ class TaskListView(tk.Frame):
 
         self._empty_label = tk.Label(
             self._inner, text=self._empty_message,
-            bg=SURFACE, fg=MUTED, font=(FONT_FAMILY, 10),
+            bg=theme.BG, fg=theme.MUTED, font=FONT_CAPTION,
             padx=20, pady=24,
         )
 
@@ -121,6 +113,21 @@ class TaskListView(tk.Frame):
     def set_empty_message(self, message: str) -> None:
         self._empty_message = message
 
+    def refresh_theme(self) -> None:
+        """Перекрашивает все raw-tk виджеты под текущую палитру theme.*"""
+        self.configure(
+            bg=theme.BG,
+            highlightbackground=theme.BORDER,
+            highlightcolor=theme.BORDER,
+        )
+        self._canvas.configure(bg=theme.BG)
+        self._inner.configure(bg=theme.BG)
+        self._empty_label.configure(bg=theme.BG, fg=theme.MUTED)
+        for rd in self._rows:
+            rd["_style_sig"] = None  # сброс кэша, иначе ранний return пропустит реконфиг
+            state = "selected" if rd["path"] == self._selected_path else "normal"
+            self._style_row(rd, state)
+
     @property
     def selected_path(self) -> str | None:
         return self._selected_path
@@ -135,7 +142,7 @@ class TaskListView(tk.Frame):
 
     def _on_canvas_resize(self, event: tk.Event) -> None:
         self._canvas.itemconfigure(self._window, width=event.width)
-        new_wrap = max(120, event.width - 60)
+        new_wrap = max(140, event.width - 80)
         if new_wrap == self._row_wraplength:
             return
         self._row_wraplength = new_wrap
@@ -174,19 +181,21 @@ class TaskListView(tk.Frame):
             return
         row_data["_style_sig"] = signature
         if state == "selected":
-            bg = ACCENT_SOFT
-            marker_fg = ACCENT
-            title_fg = MUTED if is_muted else TEXT
+            bg = theme.ACCENT
+            marker_fg = theme.TEXT
+            title_fg = theme.MUTED if is_muted else theme.TEXT
         elif state == "hover":
-            bg = SURFACE_ALT
-            marker_fg = ACCENT if is_done else MUTED
-            title_fg = MUTED if is_muted else TEXT
+            bg = theme.SURFACE_ALT
+            marker_fg = theme.HIGHLIGHT if is_done else theme.MUTED
+            title_fg = theme.MUTED if is_muted else theme.TEXT
         else:
-            bg = SURFACE
-            marker_fg = ACCENT if is_done else MUTED
-            title_fg = MUTED if is_muted else TEXT
+            bg = theme.BG
+            marker_fg = theme.HIGHLIGHT if is_done else theme.MUTED
+            title_fg = theme.MUTED if is_muted else theme.TEXT
         row_data["row"].configure(bg=bg)
-        row_data["accent"].configure(bg=ACCENT if state == "selected" else bg)
+        row_data["accent"].configure(
+            bg=theme.HIGHLIGHT if state == "selected" else bg,
+        )
         row_data["body"].configure(bg=bg)
         row_data["icon"].configure(bg=bg, fg=marker_fg)
         row_data["title"].configure(bg=bg, fg=title_fg)
@@ -200,30 +209,30 @@ class TaskListView(tk.Frame):
                 break
 
     def _make_row(self) -> dict:
-        row = tk.Frame(self._inner, bg=SURFACE, cursor="hand2")
+        row = tk.Frame(self._inner, bg=theme.BG, cursor="hand2")
         row.columnconfigure(1, weight=1)
 
-        accent_bar = tk.Frame(row, bg=SURFACE, width=3, cursor="hand2")
+        accent_bar = tk.Frame(row, bg=theme.BG, width=3, cursor="hand2")
         accent_bar.grid(row=0, column=0, sticky="ns")
 
-        body = tk.Frame(row, bg=SURFACE, cursor="hand2")
+        body = tk.Frame(row, bg=theme.BG, cursor="hand2")
         body.grid(row=0, column=1, sticky="ew")
         body.columnconfigure(1, weight=1)
 
         icon = tk.Label(
-            body, bg=SURFACE, font=(FONT_FAMILY, 13),
+            body, bg=theme.BG, font=(FONT_BODY[0], 10),
             width=2, anchor="center", cursor="hand2",
         )
-        icon.grid(row=0, column=0, sticky="n", padx=(10, 8), pady=(10, 10))
+        icon.grid(row=0, column=0, sticky="n", padx=(8, 6), pady=(8, 8))
 
         title = tk.Label(
-            body, bg=SURFACE,
-            font=(FONT_FAMILY, 10),
+            body, bg=theme.BG,
+            font=(FONT_BODY[0], 10),
             wraplength=self._row_wraplength,
             justify="left", anchor="w",
             cursor="hand2",
         )
-        title.grid(row=0, column=1, sticky="ew", padx=(0, 14), pady=(10, 10))
+        title.grid(row=0, column=1, sticky="ew", padx=(0, 12), pady=(8, 8))
 
         row_data: dict = {
             "row": row,

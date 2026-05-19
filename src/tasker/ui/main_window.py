@@ -5,9 +5,10 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
+from tasker import settings
 from tasker.attachments import attachments_dir
 from tasker.config import ICON_PATH, TASKS_DIR
-from tasker.platform_utils import apply_dark_titlebar
+from tasker.platform_utils import apply_titlebar_style
 from tasker.tasks import (
     TaskRepository,
     now_str,
@@ -15,12 +16,13 @@ from tasker.tasks import (
     sanitize_filename,
     write_task,
 )
+from tasker.ui import theme
 from tasker.ui.dnd import BaseTk
 from tasker.ui.editor import EditorPanel
 from tasker.ui.task_list import TaskListView
-from tasker.ui.theme import apply_theme
 from tasker.ui.widgets import (
     CrossLayoutShortcuts,
+    DashedDivider,
     FilterBar,
     SearchBox,
     ToastManager,
@@ -43,16 +45,21 @@ class App(BaseTk):
         self.filter_var = tk.StringVar(value="pending")
         self.search_var = tk.StringVar(value="")
         self._sash_initialized = False
+        self._theme_name = settings.load_settings().get("theme", "light")
 
-        apply_theme(self)
+        theme.apply_theme(self, name=self._theme_name)
         self._toast_mgr = ToastManager(self)
         self._build_ui()
         TASKS_DIR.mkdir(exist_ok=True)
         self.refresh_list()
         self._select_first_if_any()
         self.update_idletasks()
-        apply_dark_titlebar(self)
-        self.bind("<Map>", lambda e: apply_dark_titlebar(self), add="+")
+        self._apply_titlebar()
+        self.bind(
+            "<Map>",
+            lambda e: self._apply_titlebar(),
+            add="+",
+        )
         self._init_sash()
         self._paned.bind("<Map>", lambda e: self._init_sash())
         self._paned.bind("<Configure>", self._on_paned_configure)
@@ -66,16 +73,15 @@ class App(BaseTk):
         paned.grid(row=0, column=0, sticky="nsew")
         self._paned = paned
 
-        left = ttk.Frame(paned, padding=(20, 20, 14, 20))
-        left.rowconfigure(4, weight=1)
+        left = ttk.Frame(paned, padding=(32, 28, 22, 28))
+        left.rowconfigure(6, weight=1)
         left.columnconfigure(0, weight=1)
 
-        ttk.Label(left, text="Планнер", style="Heading.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(0, 14)
-        )
+        wordmark = ttk.Label(left, text="ПЛАННЕР", style="Display.TLabel")
+        wordmark.grid(row=0, column=0, sticky="w", pady=(0, 22))
 
         toolbar = ttk.Frame(left)
-        toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        toolbar.grid(row=2, column=0, sticky="ew", pady=(0, 22))
         ttk.Button(
             toolbar, text="＋  Новая задача", style="Primary.TButton",
             command=self.new_task, cursor="hand2",
@@ -85,19 +91,38 @@ class App(BaseTk):
             left, variable=self.search_var, on_change=self.refresh_list,
             placeholder="Поиск по названию",
         )
-        self.search_box.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        self.search_box.grid(row=3, column=0, sticky="ew", pady=(0, 18))
+
+        self._top_divider = DashedDivider(left)
+        self._top_divider.grid(row=4, column=0, sticky="ew", pady=(0, 14))
 
         self.filter_bar = FilterBar(
             left, variable=self.filter_var, on_change=self.refresh_list,
         )
-        self.filter_bar.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+        self.filter_bar.grid(row=5, column=0, sticky="ew", pady=(0, 14))
 
         self.task_list = TaskListView(left, on_select=self._select_path)
-        self.task_list.grid(row=4, column=0, sticky="nsew")
+        self.task_list.grid(row=6, column=0, sticky="nsew")
+
+        self._footer_divider = DashedDivider(left)
+        self._footer_divider.grid(row=7, column=0, sticky="ew", pady=(14, 10))
+
+        footer = ttk.Frame(left)
+        footer.grid(row=8, column=0, sticky="ew")
+        footer.columnconfigure(0, weight=1)
+        self._theme_toggle = ttk.Label(
+            footer,
+            text="☀" if self._theme_name == "dark" else "☾",
+            style="Muted.TLabel",
+            cursor="hand2",
+            padding=(8, 4),
+        )
+        self._theme_toggle.grid(row=0, column=1, sticky="e")
+        self._theme_toggle.bind("<Button-1>", lambda _e: self._toggle_theme())
 
         paned.add(left, weight=0)
 
-        right_wrap = ttk.Frame(paned, padding=(6, 20, 20, 20))
+        right_wrap = ttk.Frame(paned, padding=(20, 28, 32, 28))
         right_wrap.rowconfigure(0, weight=1)
         right_wrap.columnconfigure(0, weight=1)
 
@@ -110,6 +135,34 @@ class App(BaseTk):
         self.editor.grid(row=0, column=0, sticky="nsew")
 
         paned.add(right_wrap, weight=1)
+
+    def _apply_titlebar(self) -> None:
+        # Светлая — мягко-серая шапка с графитовой надписью; тёмная —
+        # чёрная с кремовой. Цвета берём из активной палитры, чтобы
+        # они автоматически отрабатывали переключение темы.
+        apply_titlebar_style(
+            self,
+            caption=theme.TITLEBAR,
+            text=theme.TITLEBAR_TEXT,
+            border=None,
+        )
+
+    def _toggle_theme(self) -> None:
+        new_name = "dark" if self._theme_name == "light" else "light"
+        self._theme_name = new_name
+        theme.apply_theme(self, name=new_name)
+        self.configure(bg=theme.BG)
+        self._apply_titlebar()
+        self.task_list.refresh_theme()
+        self.editor.refresh_theme()
+        self.search_box.refresh_theme()
+        self._top_divider.refresh_theme()
+        self._footer_divider.refresh_theme()
+        self._theme_toggle.configure(text="☀" if new_name == "dark" else "☾")
+        settings.save_settings({"theme": new_name})
+        self._toast_mgr.show(
+            "Тёмная тема" if new_name == "dark" else "Светлая тема",
+        )
 
     def _resolve_target_width(self) -> int:
         width = self._paned.winfo_width()
@@ -127,7 +180,7 @@ class App(BaseTk):
         if self._sash_initialized:
             return
         width = self._resolve_target_width()
-        target = max(220, int(width * 0.25))
+        target = max(340, int(width * 0.32))
         try:
             self._paned.sashpos(0, target)
         except tk.TclError:

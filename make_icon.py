@@ -7,8 +7,8 @@ OUT = Path(__file__).parent / "icon.ico"
 SUPER = 1024
 FINAL_SIZES = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
 
-GREEN = (22, 163, 74, 255)
-WHITE = (255, 255, 255, 255)
+GREEN = (34, 34, 35, 255)
+WHITE = (202, 196, 38, 255)
 
 img = Image.new("RGBA", (SUPER, SUPER), (0, 0, 0, 0))
 draw = ImageDraw.Draw(img)

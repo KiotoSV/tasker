@@ -7,6 +7,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 TASKS_DIR = PROJECT_ROOT / "tasks"
 ICON_PATH = PROJECT_ROOT / "icon.ico"
+SETTINGS_PATH = PROJECT_ROOT / "settings.json"
 
 PROJECTS_ROOT = Path(r"C:\dev")
 

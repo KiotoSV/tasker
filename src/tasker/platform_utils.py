@@ -8,8 +8,20 @@ import tkinter as tk
 from pathlib import Path
 
 
-def apply_dark_titlebar(window: tk.Tk) -> None:
-    """Переключает шапку окна в тёмный режим на Windows 10/11."""
+def _hex_to_colorref(color_hex: str) -> int:
+    """Конвертирует '#RRGGBB' в Win32 COLORREF (0x00BBGGRR)."""
+    r = int(color_hex[1:3], 16)
+    g = int(color_hex[3:5], 16)
+    b = int(color_hex[5:7], 16)
+    return r | (g << 8) | (b << 16)
+
+
+def apply_titlebar_style(
+    window: tk.Tk, caption: str, text: str, border: str | None
+) -> None:
+    """Красит шапку окна заданными цветами через DWM на Windows 11 (build 22000+).
+    border=None убирает контур окна (DWMWA_COLOR_NONE = 0xFFFFFFFE).
+    На других платформах и старых сборках — тихий no-op."""
     if sys.platform != "win32":
         return
     try:
@@ -21,16 +33,23 @@ def apply_dark_titlebar(window: tk.Tk) -> None:
         if not hwnd:
             hwnd = window.winfo_id()
         set_attr = ctypes.windll.dwmapi.DwmSetWindowAttribute
-        value = ctypes.c_int(1)
+        hwnd_arg = wintypes.HWND(hwnd)
+
+        # Снимаем immersive-dark, если он был — поверх ляжет наш цвет.
+        dark_off = ctypes.c_int(0)
         for attr in (20, 19):
-            rv = set_attr(
-                wintypes.HWND(hwnd),
-                wintypes.DWORD(attr),
-                ctypes.byref(value),
-                ctypes.sizeof(value),
-            )
-            if rv == 0:
-                break
+            set_attr(hwnd_arg, wintypes.DWORD(attr),
+                     ctypes.byref(dark_off), ctypes.sizeof(dark_off))
+
+        border_value = 0xFFFFFFFE if border is None else _hex_to_colorref(border)
+        for attr, value in (
+            (35, _hex_to_colorref(caption)),  # DWMWA_CAPTION_COLOR
+            (36, _hex_to_colorref(text)),     # DWMWA_TEXT_COLOR
+            (34, border_value),               # DWMWA_BORDER_COLOR
+        ):
+            colorref = ctypes.c_uint(value)
+            set_attr(hwnd_arg, wintypes.DWORD(attr),
+                     ctypes.byref(colorref), ctypes.sizeof(colorref))
     except Exception:
         pass
 

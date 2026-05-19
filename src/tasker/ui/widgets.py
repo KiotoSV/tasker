@@ -5,25 +5,14 @@ import tkinter as tk
 from collections.abc import Callable
 from tkinter import ttk
 
-from tasker.ui.theme import (
-    ACCENT,
-    ACCENT_SOFT,
-    BG,
-    BORDER,
-    DANGER,
-    FONT_FAMILY,
-    MUTED,
-    SURFACE,
-    SURFACE_ALT,
-    TEXT,
-)
+from tasker.ui import theme
+from tasker.ui.theme import FONT_BODY
 
 
 class ToastManager:
     """Краткое уведомление в правом верхнем углу окна, автоматически гаснет."""
 
     _ICONS = {"success": "✓", "info": "•", "warn": "!"}
-    _ICON_COLORS = {"success": ACCENT, "info": ACCENT, "warn": DANGER}
 
     def __init__(self, root: tk.Misc, duration_ms: int = 2200) -> None:
         self._root = root
@@ -36,19 +25,19 @@ class ToastManager:
         self._destroy_current()
 
         icon = self._ICONS.get(kind, "•")
-        icon_fg = self._ICON_COLORS.get(kind, ACCENT)
+        icon_fg = theme.DANGER if kind == "warn" else theme.TEXT
 
         toast = tk.Frame(
-            self._root, bg=SURFACE_ALT, highlightthickness=1,
-            highlightbackground=BORDER, highlightcolor=BORDER,
+            self._root, bg=theme.HIGHLIGHT, highlightthickness=1,
+            highlightbackground=theme.BORDER, highlightcolor=theme.BORDER,
         )
         tk.Label(
-            toast, text=icon, bg=SURFACE_ALT, fg=icon_fg,
-            font=(FONT_FAMILY, 12, "bold"),
+            toast, text=icon, bg=theme.HIGHLIGHT, fg=icon_fg,
+            font=(FONT_BODY[0], 12, "bold"),
         ).pack(side="left", padx=(14, 8), pady=10)
         tk.Label(
-            toast, text=message, bg=SURFACE_ALT, fg=TEXT,
-            font=(FONT_FAMILY, 10),
+            toast, text=message, bg=theme.HIGHLIGHT, fg=theme.TEXT,
+            font=FONT_BODY,
         ).pack(side="left", padx=(0, 16), pady=10)
         toast.place(relx=1.0, rely=0.0, x=-22, y=22, anchor="ne")
         toast.lift()
@@ -157,8 +146,41 @@ class FilterBar(ttk.Frame):
             self._apply_layout()
 
 
+class DashedDivider(tk.Canvas):
+    """Горизонтальная пунктирная линия. DESIGN.md использует их между блоками
+    контента — Tk ttk не умеет dashed border, поэтому рисуем на Canvas.
+    Высота фиксированная (1px), длина растягивается по ширине."""
+
+    def __init__(self, master: tk.Misc, dash: tuple[int, int] = (4, 6)) -> None:
+        super().__init__(
+            master, bg=theme.BG, height=1, highlightthickness=0, bd=0,
+        )
+        self._dash = dash
+        self._line: int | None = None
+        self.bind("<Configure>", self._redraw)
+
+    def _redraw(self, event: tk.Event) -> None:
+        if self._line is not None:
+            self.delete(self._line)
+        self._line = self.create_line(
+            0, 0, max(1, event.width), 0,
+            fill=theme.BORDER, width=1, dash=self._dash,
+        )
+
+    def refresh_theme(self) -> None:
+        self.configure(bg=theme.BG)
+        width = max(1, self.winfo_width())
+        if self._line is not None:
+            self.delete(self._line)
+        self._line = self.create_line(
+            0, 0, width, 0,
+            fill=theme.BORDER, width=1, dash=self._dash,
+        )
+
+
 class SearchBox(tk.Frame):
-    """Поле поиска с placeholder, подсветкой фокуса и Escape-очисткой."""
+    """Ghost-инпут с нижней hairline-линией: без рамки сверху/по бокам,
+    bottom-border 1px cream → sienna при фокусе. Placeholder, Escape-очистка."""
 
     def __init__(
         self,
@@ -167,26 +189,26 @@ class SearchBox(tk.Frame):
         on_change: Callable[[], None],
         placeholder: str = "Поиск",
     ) -> None:
-        super().__init__(
-            master, bg=SURFACE, highlightthickness=1,
-            highlightbackground=BORDER, highlightcolor=BORDER,
-        )
+        super().__init__(master, bg=theme.BG)
         self._variable = variable
         self._on_change = on_change
 
         self._entry = tk.Entry(
             self,
             textvariable=variable,
-            bg=SURFACE, fg=TEXT, insertbackground=ACCENT,
+            bg=theme.BG, fg=theme.TEXT, insertbackground=theme.ACCENT,
             relief="flat", borderwidth=0, highlightthickness=0,
-            font=(FONT_FAMILY, 10),
+            font=FONT_BODY,
         )
-        self._entry.pack(fill="x", padx=12, pady=8)
+        self._entry.pack(fill="x", padx=2, pady=(2, 6))
+
+        self._underline = tk.Frame(self, bg=theme.BORDER_STRONG, height=1)
+        self._underline.pack(fill="x", side="bottom")
 
         self._placeholder = tk.Label(
             self, text=placeholder,
-            bg=SURFACE, fg=MUTED,
-            font=(FONT_FAMILY, 10),
+            bg=theme.BG, fg=theme.MUTED,
+            font=FONT_BODY,
             cursor="hand2",
         )
         self._placeholder.place(in_=self._entry, relx=0, rely=0.5, x=2, anchor="w")
@@ -211,10 +233,21 @@ class SearchBox(tk.Frame):
         self._on_change()
 
     def _on_focus_in(self, _event: tk.Event) -> None:
-        self.configure(highlightbackground=ACCENT, highlightcolor=ACCENT)
+        self._underline.configure(bg=theme.ACCENT)
 
     def _on_focus_out(self, _event: tk.Event) -> None:
-        self.configure(highlightbackground=BORDER, highlightcolor=BORDER)
+        self._underline.configure(bg=theme.BORDER_STRONG)
+
+    def refresh_theme(self) -> None:
+        self.configure(bg=theme.BG)
+        self._entry.configure(
+            bg=theme.BG, fg=theme.TEXT, insertbackground=theme.ACCENT,
+        )
+        focused = self._entry == self.focus_get()
+        self._underline.configure(
+            bg=theme.ACCENT if focused else theme.BORDER_STRONG,
+        )
+        self._placeholder.configure(bg=theme.BG, fg=theme.MUTED)
 
 
 def select_all_in(widget: tk.Widget) -> None:

@@ -13,7 +13,10 @@
       "Bash(echo \"exit=$?\")",
       "Bash(python *)",
       "Bash(rm -rf __pycache__ src/tasker/__pycache__ src/tasker/ui/__pycache__)",
-      "Bash(PYTHONPATH=src python -c ' *)"
+      "Bash(PYTHONPATH=src python -c ' *)",
+      "Bash(Measure-Object)",
+      "Bash(Select-Object -ExpandProperty Count)",
+      "Bash(xargs ls -1)"
     ]
   }
 }
