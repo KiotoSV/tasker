@@ -158,7 +158,7 @@ class App(BaseTk):
         self._top_divider.refresh_theme()
         self._footer_divider.refresh_theme()
         self._theme_toggle.configure(text="☀" if new_name == "dark" else "☾")
-        settings.save_settings({"theme": new_name})
+        settings.update_settings({"theme": new_name})
         self._toast_mgr.show(
             "Тёмная тема" if new_name == "dark" else "Светлая тема",
         )

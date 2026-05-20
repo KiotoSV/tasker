@@ -9,7 +9,7 @@ TASKS_DIR = PROJECT_ROOT / "tasks"
 ICON_PATH = PROJECT_ROOT / "icon.ico"
 SETTINGS_PATH = PROJECT_ROOT / "settings.json"
 
-PROJECTS_ROOT = Path(r"C:\dev")
+DEFAULT_PROJECTS_ROOT = Path(r"C:\dev")
 
 DATE_FMT = "%Y-%m-%d %H:%M"
 FORBIDDEN_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')

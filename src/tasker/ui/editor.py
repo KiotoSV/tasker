@@ -16,7 +16,7 @@ from tasker.attachments import (
     list_attachments,
     parse_dnd_paths,
 )
-from tasker.config import PROJECTS_ROOT
+from tasker.settings import get_projects_root
 from tasker.platform_utils import (
     launch_claude_in_powershell,
     open_in_system,
@@ -741,7 +741,8 @@ class EditorPanel(tk.Frame):
     def _add_project(self) -> None:
         if self._current_path is None:
             return
-        initial = str(PROJECTS_ROOT) if PROJECTS_ROOT.is_dir() else None
+        projects_root = get_projects_root()
+        initial = str(projects_root) if projects_root.is_dir() else None
         folder = filedialog.askdirectory(
             parent=self, title="Выберите папку проекта",
             initialdir=initial, mustexist=True,
