@@ -9,6 +9,22 @@ from tasker.ui import theme
 from tasker.ui.theme import FONT_BODY, FONT_CAPTION
 
 
+def _date_part(value: str) -> str:
+    """Из '2026-05-18 11:44' делает '2026-05-18'. Любая ересь — как есть."""
+    return value.split(" ", 1)[0] if value else ""
+
+
+def _format_meta(created: str, completed: str) -> str:
+    created_d = _date_part(created)
+    completed_d = _date_part(completed)
+    lines = []
+    if created_d:
+        lines.append(f"Создана: {created_d}")
+    if completed_d:
+        lines.append(f"Выполнена: {completed_d}")
+    return "\n".join(lines)
+
+
 class TaskListView(tk.Frame):
     """Прокручиваемый список задач. Полностью владеет своей подсветкой;
     оркестратор сообщает ему данные через render() и текущую выделенную строку
@@ -66,7 +82,8 @@ class TaskListView(tk.Frame):
 
     def render(self, items: list[dict]) -> None:
         """Рисует строки списка. Ожидает dict-и с полями path (Path), title (str),
-        status (str). Имеющиеся строки переиспользуются."""
+        status (str), created (str), completed (str). Имеющиеся строки
+        переиспользуются."""
         needed = len(items)
         existing = len(self._rows)
 
@@ -155,6 +172,7 @@ class TaskListView(tk.Frame):
         self._wraplength_pending = False
         for r in self._rows:
             r["title"].configure(wraplength=self._row_wraplength)
+            r["meta"].configure(wraplength=self._row_wraplength)
 
     def _request_scrollregion_update(self) -> None:
         if self._scrollregion_pending:
@@ -207,6 +225,7 @@ class TaskListView(tk.Frame):
         row_data["body"].configure(bg=bg)
         row_data["icon"].configure(bg=bg, fg=marker_fg)
         row_data["title"].configure(bg=bg, fg=title_fg)
+        row_data["meta"].configure(bg=bg, fg=theme.MUTED)
 
     def _on_row_hover(self, path_str: str, entering: bool) -> None:
         if self._selected_path == path_str:
@@ -231,7 +250,7 @@ class TaskListView(tk.Frame):
             body, bg=theme.BG, font=(FONT_BODY[0], 10),
             width=2, anchor="center", cursor="hand2",
         )
-        icon.grid(row=0, column=0, sticky="n", padx=(8, 6), pady=(8, 8))
+        icon.grid(row=0, column=0, rowspan=2, sticky="n", padx=(8, 6), pady=(8, 8))
 
         title = tk.Label(
             body, bg=theme.BG,
@@ -240,7 +259,16 @@ class TaskListView(tk.Frame):
             justify="left", anchor="w",
             cursor="hand2",
         )
-        title.grid(row=0, column=1, sticky="ew", padx=(0, 12), pady=(8, 8))
+        title.grid(row=0, column=1, sticky="ew", padx=(0, 12), pady=(8, 0))
+
+        meta = tk.Label(
+            body, bg=theme.BG, fg=theme.MUTED,
+            font=FONT_CAPTION,
+            wraplength=self._row_wraplength,
+            justify="left", anchor="w",
+            cursor="hand2",
+        )
+        meta.grid(row=1, column=1, sticky="ew", padx=(0, 12), pady=(0, 8))
 
         row_data: dict = {
             "row": row,
@@ -248,12 +276,13 @@ class TaskListView(tk.Frame):
             "body": body,
             "icon": icon,
             "title": title,
+            "meta": meta,
             "path": "",
             "is_done": False,
             "is_deferred": False,
         }
 
-        for w in (row, body, icon, title, accent_bar):
+        for w in (row, body, icon, title, meta, accent_bar):
             w.bind("<Button-1>", lambda e, rd=row_data: self._on_select(rd["path"]))
         row.bind("<Enter>", lambda e, rd=row_data: self._on_row_hover(rd["path"], True))
         row.bind("<Leave>", lambda e, rd=row_data: self._on_row_hover(rd["path"], False))
@@ -268,6 +297,9 @@ class TaskListView(tk.Frame):
         row_data["is_done"] = is_done
         row_data["is_deferred"] = is_deferred
         row_data["title"].configure(text=task["title"])
+        row_data["meta"].configure(
+            text=_format_meta(task.get("created", ""), task.get("completed", "")),
+        )
         if is_done:
             icon_text = "✓"
         elif is_deferred:
