@@ -165,10 +165,18 @@ class TaskListView(tk.Frame):
     def _apply_scrollregion(self) -> None:
         self._scrollregion_pending = False
         bbox = self._canvas.bbox("all")
-        if bbox:
-            self._canvas.configure(scrollregion=bbox)
+        if not bbox:
+            return
+        self._canvas.configure(scrollregion=(0, 0, bbox[2], bbox[3]))
 
     def _on_wheel(self, event: tk.Event) -> None:
+        bbox = self._canvas.bbox("all")
+        if not bbox:
+            return
+        content_h = bbox[3] - bbox[1]
+        canvas_h = self._canvas.winfo_height()
+        if content_h <= canvas_h:
+            return
         delta = -1 if event.delta > 0 else 1
         self._canvas.yview_scroll(delta, "units")
 
