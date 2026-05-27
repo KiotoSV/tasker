@@ -7,8 +7,8 @@ from tkinter import messagebox, ttk
 
 from tasker import settings
 from tasker.attachments import attachments_dir
-from tasker.config import ICON_PATH, TASKS_DIR
-from tasker.platform_utils import apply_titlebar_style
+from tasker.config import ICON_PATH, TASKS_DIR, _is_frozen
+from tasker.platform_utils import apply_titlebar_style, create_desktop_shortcut
 from tasker.tasks import (
     TaskRepository,
     now_str,
@@ -49,7 +49,7 @@ class App(BaseTk):
         theme.apply_theme(self, name=self._theme_name)
         self._toast_mgr = ToastManager(self)
         self._build_ui()
-        TASKS_DIR.mkdir(exist_ok=True)
+        TASKS_DIR.mkdir(parents=True, exist_ok=True)
         self.refresh_list()
         self._select_first_if_any()
         self.update_idletasks()
@@ -63,6 +63,18 @@ class App(BaseTk):
         self._paned.bind("<Map>", lambda e: self._init_sash())
         self._paned.bind("<Configure>", self._on_paned_configure)
         CrossLayoutShortcuts(self, self.save_task)
+        self._ensure_shortcut()
+
+    def _ensure_shortcut(self) -> None:
+        if not _is_frozen():
+            return
+        s = settings.load_settings()
+        if s.get("shortcut_created"):
+            return
+        import sys
+        exe = Path(sys.executable)
+        if create_desktop_shortcut(exe, ICON_PATH):
+            settings.update_settings({"shortcut_created": True})
 
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
@@ -240,7 +252,7 @@ class App(BaseTk):
         self.editor.load(path, parse_task(path))
 
     def new_task(self) -> None:
-        TASKS_DIR.mkdir(exist_ok=True)
+        TASKS_DIR.mkdir(parents=True, exist_ok=True)
         path = self.repo.unique_path("Новая задача")
         write_task(path, "pending", [], now_str(), "", "")
         if self.filter_var.get() not in ("all", "pending"):

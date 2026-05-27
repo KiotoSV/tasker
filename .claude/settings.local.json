@@ -16,7 +16,13 @@
       "Bash(PYTHONPATH=src python -c ' *)",
       "Bash(Measure-Object)",
       "Bash(Select-Object -ExpandProperty Count)",
-      "Bash(xargs ls -1)"
+      "Bash(xargs ls -1)",
+      "Bash(Get-ChildItem -Recurse -Depth 3)",
+      "Bash(Select-Object FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\dev\\\\tasker\\\\src\\\\tasker\\\\ui\\\\fonts\")",
+      "Bash(Select-Object Name)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Test-Path *)"
     ]
   }
 }

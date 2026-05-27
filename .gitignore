@@ -6,3 +6,5 @@ _imported/
 build/
 dist/
 .pytest_cache/
+installer_output/
+_installer_bom.iss

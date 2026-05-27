@@ -12,7 +12,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dnd = ["tkinterdnd2"]
-dev = ["pytest"]
+dev = ["pytest", "pyinstaller"]
 
 [project.scripts]
 tasker-cli = "tasker.app:main"

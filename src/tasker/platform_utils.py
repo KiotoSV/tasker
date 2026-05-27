@@ -67,6 +67,33 @@ def launch_claude_in_powershell(project_path: Path) -> None:
         subprocess.Popen(["pwsh", "-NoExit", "-Command", command])
 
 
+def create_desktop_shortcut(target: Path, icon: Path, name: str = "Планнер") -> bool:
+    """Создаёт .lnk на рабочем столе через PowerShell. Возвращает True при успехе."""
+    if sys.platform != "win32":
+        return False
+    desktop = Path(os.path.expandvars(r"%USERPROFILE%\Desktop"))
+    lnk = desktop / f"{name}.lnk"
+    if lnk.exists():
+        return True
+    ps = (
+        '$ws = New-Object -ComObject WScript.Shell; '
+        f'$s = $ws.CreateShortcut("{lnk}"); '
+        f'$s.TargetPath = "{target}"; '
+        f'$s.WorkingDirectory = "{target.parent}"; '
+        f'$s.IconLocation = "{icon}"; '
+        '$s.Save()'
+    )
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps],
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            timeout=10,
+        )
+        return lnk.exists()
+    except Exception:
+        return False
+
+
 def open_in_system(path: Path) -> None:
     if sys.platform == "win32":
         os.startfile(str(path))
